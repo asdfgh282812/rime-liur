@@ -1,0 +1,19 @@
+# 獨立保留數字聲調的 prism，包含地球拼音鍵盤本身省略的輕聲。
+schema:
+  schema_id: liur_readings
+  name: 蝦米同音字讀音索引
+  version: "20261027"
+
+engine:
+  processors: [ speller, selector, express_editor ]
+  segmentors: [ abc_segmentor, fallback_segmentor ]
+  translators: [ script_translator ]
+
+speller:
+  alphabet: abcdefghijklmnopqrstuvwxyz12345
+
+translator:
+  dictionary: terra_pinyin
+  prism: liur_readings
+  enable_user_dict: false
+  enable_completion: false

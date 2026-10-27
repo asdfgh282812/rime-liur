@@ -5,12 +5,15 @@
 schema:
   schema_id: liur
   name: 蝦米輸入法
-  version: "20181227"
+  version: "20261027"
   author:
     - 制作人
   description: |
     蝦米-拼音-注音反查輸入法
   dependencies:
+    - liur_simplified
+    - liur_japanese
+    - liur_readings
 
 switches:
   - name: ascii_mode
@@ -28,10 +31,14 @@ switches:
     states: [ 繁體, 简体 ]
   - name: zh_tw
     reset: 1
+  - options: [ liur_traditional, liur_simplified, liur_trad_to_simp, liur_japanese ]
+    reset: 0
+    states: [ 繁體, 簡體字碼, 打繁出簡, 日文 ]
 
 engine:
   processors:
     - ascii_composer
+    - lua_processor@*liur_features*processor
     - recognizer
     - key_binder
     - speller
@@ -43,14 +50,17 @@ engine:
   segmentors:
     - ascii_segmentor
     - matcher
+    - lua_segmentor@*liur_features*segmentor
     - abc_segmentor
     - affix_segmentor@mkst
     - affix_segmentor@liurqry
     - affix_segmentor@pinyin
     - affix_segmentor@phonetic
+    - affix_segmentor@homophone
 #    - punct_segmentor
     - fallback_segmentor
   translators:
+    - lua_translator@*liur_features*translator
 #    - echo_translator
 #    - punct_translator
 #    - script_translator
@@ -60,9 +70,14 @@ engine:
     - table_translator
     - script_translator@pinyin
     - script_translator@phonetic
+    - table_translator@liur_simplified
+    - table_translator@liur_japanese
+    - script_translator@homophone_readings
 
   filters:
     - simplifier
+    - simplifier@liur_trad_to_simp
+    - simplifier@liur_simplified_output
     - simplifier@liu_w2c	#無蝦米字碼反查
     - simplifier@zh_tw
     - uniquifier	#過濾重複的候選字，有可能來自繁簡轉換
@@ -87,6 +102,54 @@ zh_tw:	#只針對拼音及注音反查進行台灣用語轉換
 
 simplifier:
   tips: all	# 簡化字模式下提示對應的傳統漢字
+
+liur_trad_to_simp:
+  option_name: liur_trad_to_simp
+  opencc_config: t2s.json
+  tags: [ abc, mkst, liurqry, pinyin, phonetic, homophone, homophone_result ]
+  excluded_types: [ liur_command ]
+
+liur_simplified_output:
+  option_name: liur_simplified
+  opencc_config: t2s.json
+  excluded_types: [ liur_command ]
+
+# 各語言獨立分段，避免不同字型的候選字混在一起。
+liur_simplified:
+  tag: liur_simplified
+  dictionary: liur_TradToSimp
+  enable_user_dict: false
+  enable_sentence: false
+  enable_completion: true
+
+liur_japanese:
+  tag: liur_japanese
+  dictionary: liur_Japan
+  enable_user_dict: false
+  enable_sentence: false
+  enable_completion: true
+
+homophone:
+  __include: /translator
+  tag: homophone
+  prefix: "'"
+  tips: 【選擇同音原字】
+
+homophone_simplified:
+  __include: /homophone
+  dictionary: liur_TradToSimp
+
+homophone_japanese:
+  __include: /homophone
+  dictionary: liur_Japan
+
+# Lua Memory 使用原生地球拼音詞庫，精確查詢包含聲調的讀音。
+homophone_readings:
+  tag: homophone_readings
+  dictionary: terra_pinyin
+  prism: liur_readings
+  enable_user_dict: false
+  enable_completion: false
 
 speller:
   alphabet: "abcdefghijklmnopqrstuvwxyz[];',."
@@ -205,11 +268,17 @@ key_binder:
 
 recognizer:
   import_preset: default
+  use_space: true  # 讓注音的一聲空白鍵先由 recognizer 處理
 
   patterns:
     email: ^[a-z][-_.0-9a-z]*@.*$
     url: ^(www[.]|https?:|ftp:|mailto:).*$
-    phonetic: "';[1qaz2wsxedcrfv5tgbyhnujm8ik,9ol.0p;/6347-]*'?$" # 「-」為「ㄦ」，移到最後面，讓正則可正確抓取
+    liur_command: "^,,(?:c|ct|j|t)?$"
+    homophone: "^'[a-z]+$"
+    homophone_result: "^'=.+$"
+    # 每個音節可接一個聲調（空白為一聲）；再按空白則交給選字流程。
+    # 「-」為「ㄦ」，放在字元集合最後，避免被視為範圍。
+    phonetic: "';(?:[1qaz2wsxedcrfv5tgbyhnujm8ik,9ol.0p;/-]+[ 6347])*[1qaz2wsxedcrfv5tgbyhnujm8ik,9ol.0p;/-]*'?$"
 # 注音反查引導鍵
     pinyin: "`[a-z']*'?$"
 # 漢語拼音輸入引導鍵

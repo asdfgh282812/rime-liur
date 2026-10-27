@@ -1,0 +1,19 @@
+# 主方案的相依方案，供部署時編譯簡體字碼詞庫。
+schema:
+  schema_id: liur_simplified
+  name: 蝦米簡體字碼
+  version: "20261027"
+
+engine:
+  processors: [ ascii_composer, speller, selector, express_editor ]
+  segmentors: [ abc_segmentor, fallback_segmentor ]
+  translators: [ table_translator ]
+
+speller:
+  alphabet: "abcdefghijklmnopqrstuvwxyz[];',."
+
+translator:
+  dictionary: liur_TradToSimp
+  enable_user_dict: false
+  enable_sentence: false
+  enable_completion: true
