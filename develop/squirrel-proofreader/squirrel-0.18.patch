@@ -1,0 +1,64 @@
+--- a/SquirrelPanel.m
++++ b/SquirrelPanel.m
+@@ -1,5 +1,6 @@
+ #import "SquirrelPanel.h"
+ 
++#import "LiurProofreadHint.h"
+ #import "SquirrelConfig.h"
+ #import <QuartzCore/QuartzCore.h>
+ 
+@@ -215,6 +216,7 @@
+ @property(nonatomic, strong, readonly) SquirrelTheme* currentTheme;
+ @property(nonatomic, readonly) NSTextLayoutManager* layoutManager;
+ @property(nonatomic, assign) CGFloat seperatorWidth;
++@property(nonatomic, assign) BOOL proofreadWarning;
+ @property(nonatomic, readonly) CAShapeLayer* shape;
+ 
+ - (void)drawViewWith:(NSArray<NSValue*>*)candidateRanges
+@@ -1002,7 +1004,9 @@
+   }
+   if (theme.highlightedBackColor && !CGPathIsEmpty(highlightedPath)) {
+     CAShapeLayer* layer = shapeFromPath(highlightedPath);
+-    layer.fillColor = theme.highlightedBackColor.CGColor;
++    layer.fillColor = (_proofreadWarning ? LiurProofreadWarningColor()
++                                         : theme.highlightedBackColor)
++                          .CGColor;
+     if (theme.shadowSize > 0) {
+       CAShapeLayer* shadowLayer = [CAShapeLayer layer];
+       shadowLayer.shadowColor = NSColor.blackColor.CGColor;
+@@ -1590,6 +1594,8 @@
+   }
+ 
+   NSMutableArray<NSValue*>* candidateRanges = [[NSMutableArray alloc] init];
++  BOOL proofreadWarning =
++      index < comments.count && LiurIsProofreadComment(comments[index]);
+   // candidates
+   NSUInteger i;
+   for (i = 0; i < candidates.count; ++i) {
+@@ -1599,7 +1605,9 @@
+     NSDictionary* labelAttrs;
+     NSDictionary* commentAttrs;
+     if (i == index) {
+-      attrs = theme.highlightedAttrs;
++      attrs = proofreadWarning
++                  ? LiurProofreadWarningAttrs(theme.highlightedAttrs)
++                  : theme.highlightedAttrs;
+       labelAttrs = theme.labelHighlightedAttrs;
+       commentAttrs = theme.commentHighlightedAttrs;
+     } else {
+@@ -1768,6 +1776,7 @@
+   } else {
+     _view.textView.layoutOrientation = NSTextLayoutOrientationHorizontal;
+   }
++  _view.proofreadWarning = proofreadWarning;
+   [_view drawViewWith:candidateRanges
+                hilightedIndex:index
+                  preeditRange:preeditRange
+@@ -1815,6 +1824,7 @@
+   NSRange emptyRange = NSMakeRange(NSNotFound, 0);
+   NSArray<NSValue*>* candidateRanges =
+       @[ [NSValue valueWithRange:NSMakeRange(0, text.length)] ];
++  _view.proofreadWarning = NO;
+   [_view drawViewWith:candidateRanges
+                hilightedIndex:-1
+                  preeditRange:emptyRange

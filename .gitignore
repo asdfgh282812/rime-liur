@@ -1,2 +1,7 @@
 **/**/mine*.yaml
 .idea
+.proofreader-model/
+.squirrel-proofreader/
+**/__pycache__/
+Rime/lua/*.so
+Rime/proofreader/liur_proofread_client

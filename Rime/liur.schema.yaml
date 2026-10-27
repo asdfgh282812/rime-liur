@@ -34,10 +34,14 @@ switches:
   - options: [ liur_traditional, liur_simplified, liur_trad_to_simp, liur_japanese ]
     reset: 0
     states: [ 繁體, 簡體字碼, 打繁出簡, 日文 ]
+  - name: liur_proofread
+    reset: 1
+    states: [ 關閉校錯, 校錯提示 ]
 
 engine:
   processors:
     - ascii_composer
+    - lua_processor@*liur_proofreader*processor
     - lua_processor@*liur_features*processor
     - recognizer
     - key_binder
@@ -82,6 +86,7 @@ engine:
     - simplifier@zh_tw
     - uniquifier	#過濾重複的候選字，有可能來自繁簡轉換
     - reverse_lookup_filter@phonetic_reverse_lookup
+    - lua_filter@*liur_proofreader*filter
     # - single_char_filter  #單字優先
 
 # abc_segmentor:

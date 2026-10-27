@@ -86,6 +86,56 @@
 
 Mac 開發者可執行 `python3 develop/test-rime-features.py`，在暫存目錄驗證部署、模式切換、同音字選字與原有輸入功能，不會修改正式設定或正式使用者詞庫。
 
+### 離線繁體中文校錯提示（Mac 原型）
+
+在繁體模式輸入「備」後，再打出「住」的蝦米碼 `pak`，候選字仍是原本的「住」，註解會顯示 **建議「註」：備註〔Tab採用〕**。
+
+- **Tab**：採用建議，送出「註」。
+- **空白／數字鍵**：照原本方式送出「住」。Enter 仍輸出原始英文碼。
+- 打成「備住」後，用 **Backspace 刪掉「住」再輸入 `pak`**，仍會再次提示「備註」；刪改尚未送出的字碼或按 Escape 取消組字，也會保留已輸入的前文。
+- 在 Rime 選單切換「校錯提示／關閉校錯」即可開關；簡體與日文模式不啟用。
+
+模型使用 [CKIP ALBERT Tiny](https://huggingface.co/ckiplab/albert-tiny-chinese)，約 16.3 MB，保留官方模型來源與 GPL-3.0 授權資訊。使用同音候選、地球拼音的讀音與既有詞庫保護正常詞，模型只在分數差與信心達門檻時提出建議。這是原型，範例通過不代表能抓出所有錯字。
+
+可連續輸入多於兩字或 32 字，只有評分使用的左上下文保留末 32 字。重複輸入錯字可能干擾小模型的長上下文判斷，因此整段評分沒有明確建議時，會另外以目前局部詞語評分，採更嚴格的分數差與信心門檻；不同局部判斷衝突時不提示。局部回退也會保護完整詞的邊界，避免將「我準備住進新家」誤拆成「備註」。這仍是選字中的單字提示，不是整篇或完整句子的校對器。
+
+只檢查第一個候選字，且必須是單一中文字。使用本次輸入的最近最多 32 個中文字作為左上下文；Backspace 會回退相對應的字，修改字碼和候選上下選字不會清空前文。閒置超過 2 分鐘且開始新的組字、鍵盤移動文件游標、向前刪除、切換語言或非中文上屏時會清除。已顯示的提示不會因閱讀停頓而失效；與文字無關的候選視窗選項也不再清空上下文。無法得知滑鼠移動後的文件游標位置，也不讀取文件全文；不會修改已送出的文字或提供紅線標示。
+
+日常推論只使用 **NumPy、ONNX Runtime**，在獨立的本機程序執行，沒有雲端請求或文字日誌。輸入法透過獨立的小型連線程式查詢，socket 等待上限為 50 毫秒，另有子行程啟動成本；服務不存在或逾時就維持原結果。最近的短文字經本機子行程參數傳遞，不寫入檔案或日誌。模型權重、執行環境與實際記憶體用量分開計算；PyTorch、Transformers 只用於首次匯出模型。
+
+首次設定需要先安裝 Python 3、librime-lua 與 Mac 命令列開發工具，再於本專案執行：
+
+```sh
+# 建置環境（可在匯出完成後移除）
+python3 -m venv --system-site-packages /tmp/liur-model-build
+/tmp/liur-model-build/bin/python -m pip install 'torch>=2.6,<3' 'transformers>=4.51,<5' onnx
+/tmp/liur-model-build/bin/python develop/export-proofreader-model.py .proofreader-model
+
+# 日常執行環境與安裝
+python3 -m pip install numpy onnxruntime
+python3 develop/test-proofreader.py
+python3 develop/install-proofreader.py
+```
+
+安裝程式會備份涉及的原檔、編譯小型本機連線程式、建立登入時啟動的背景服務，並重新部署；保留個人的 `.custom.yaml` 和詞庫。`Rime` 目錄本身不包含模型，單純複製方案不會下載或啟動模型，其他功能仍可正常使用。
+
+若要連同背景服務一起停用，可執行 `python3 develop/install-proofreader.py --disable`；重新執行安裝可再次啟用。背景程序僅在模型初始化失敗等情況寫入 `~/Library/Rime/proofreader/service-errors.log`，不記錄查詢文字。
+
+若早期原型的背景服務正常，卻始終沒有提示，請重新執行安裝程式。原廠鼠鬚管會拒絕載入不同 Team ID 的外部動態函式庫，目前已改用獨立連線程式，不再載入 `.so`，也不更動原廠程式簽章與安全設定。除了引擎測試，已在原廠鼠鬚管實際輸入並確認提示和 Tab 採用。
+
+### 校錯紅色標示：直接更新現有鼠鬚管
+
+`develop/build-original-squirrel-underline.py` 使用官方 Squirrel 0.18 原始碼加上校錯標示修改：選取的候選附有校錯建議時，候選窗中該列的高亮底色改為紅色、字為白色，換到沒有建議的候選即恢復原本顏色。修改只在候選窗（`SquirrelPanel.m`），不再對應用程式的組字區加底線，因此不受各應用程式處理組字樣式的影響。保留原本的 App 名稱、輸入來源識別、連線名稱及 `~/Library/Rime` 設定。需要本機既有的 Apple 開發簽章憑證；程式與所有載入的函式庫使用同一份開發憑證重新簽章，保留 Hardened Runtime 與函式庫驗證，不關閉系統安全設定。
+
+```sh
+security find-identity -v -p codesigning
+python3 develop/build-original-squirrel-underline.py --identity <開發憑證的識別碼>
+```
+
+工具先逐檔核對完整 App 備份與腳本簽章屬性，再產生 `.squirrel-proofreader/original/Squirrel-Liur-Underline.pkg`。備份位於 `~/Library/Rime/backups/squirrel-app-時間戳/`，其中 `manifest.json` 記錄原始與修改後的執行檔雜湊；`files.json` 記錄全部檔案與簽章屬性。安裝套件只更新 `/Library/Input Methods/Squirrel.app`，不包含 Rime 個人設定或使用者字庫；系統管理員認證必須在 macOS 視窗完成。原廠自動更新會覆蓋此本機修改，更新後需要重新評估相容版本。
+
+安裝後須用真正按鍵驗證 `備pak` 時選取列變紅、換候選後恢復與 Tab 採用；原生 helper 測試和簽章驗證不能代替實機結果。
+
 ## MAC下安裝【鼠鬚管 + 嘸蝦米】完整流程
 ### 自動安裝
 (2021/12/26新增)

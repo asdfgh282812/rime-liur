@@ -90,7 +90,8 @@ class RimeFeatures(unittest.TestCase):
         elif (source / "lua").exists():
             shutil.copytree(source / "lua", cls.data / "lua")
         cls.lib = C.CDLL(str(app / "Frameworks/librime.1.dylib"))
-        cls.lua = C.CDLL(str(plugin), mode=C.RTLD_GLOBAL)
+        # 與鼠鬚管一致；GLOBAL 會掩蓋連線模組未明確連結 Lua 的錯誤。
+        cls.lua = C.CDLL(str(plugin), mode=C.RTLD_LOCAL)
         signatures = {
             "Setup": ([C.POINTER(Traits)], None),
             "Initialize": ([C.POINTER(Traits)], None),
@@ -164,7 +165,7 @@ class RimeFeatures(unittest.TestCase):
 
     def type(self, text):
         for char in text:
-            self.key({"\n": 0xff0d, "\b": 0xff08, "\x1b": 0xff1b}.get(char, ord(char)))
+            self.key({"\n": 0xff0d, "\b": 0xff08, "\x1b": 0xff1b, "\t": 0xff09}.get(char, ord(char)))
         return self.snapshot()
 
     def switch(self, command):
