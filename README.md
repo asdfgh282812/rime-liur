@@ -123,16 +123,35 @@ python3 develop/install-proofreader.py
 
 若早期原型的背景服務正常，卻始終沒有提示，請重新執行安裝程式。原廠鼠鬚管會拒絕載入不同 Team ID 的外部動態函式庫，目前已改用獨立連線程式，不再載入 `.so`，也不更動原廠程式簽章與安全設定。除了引擎測試，已在原廠鼠鬚管實際輸入並確認提示和 Tab 採用。
 
-### 校錯紅色標示：直接更新現有鼠鬚管
+### 內建校錯與紅色標示：直接更新現有鼠鬚管
 
 `develop/build-original-squirrel-underline.py` 使用官方 Squirrel 0.18 原始碼加上校錯標示修改：選取的候選附有校錯建議時，候選窗中該列的高亮底色改為紅色、字為白色，換到沒有建議的候選即恢復原本顏色。修改只在候選窗（`SquirrelPanel.m`），不再對應用程式的組字區加底線，因此不受各應用程式處理組字樣式的影響。保留原本的 App 名稱、輸入來源識別、連線名稱及 `~/Library/Rime` 設定。需要本機既有的 Apple 開發簽章憑證；程式與所有載入的函式庫使用同一份開發憑證重新簽章，保留 Hardened Runtime 與函式庫驗證，不關閉系統安全設定。
+
+內建版本將模型（約 16 MB）、Python、NumPy 和 ONNX Runtime 一起封裝在 App，使用者不需另外安裝 Python。鼠鬚管啟動時自動開啟校錯程序，退出時一同結束；程序意外退出會限速重啟，父程序異常結束時也會自行退出。啟動暖機尚未完成時暫無建議，一般輸入可照常使用。
+
+建置工具需先安裝 PyInstaller；這是開發端相依套件：
+
+```sh
+python3 -m venv --system-site-packages .squirrel-proofreader/bundle-tools/venv
+.squirrel-proofreader/bundle-tools/venv/bin/python -m pip install 'pyinstaller==6.16.0'
+```
 
 ```sh
 security find-identity -v -p codesigning
 python3 develop/build-original-squirrel-underline.py --identity <開發憑證的識別碼>
 ```
 
-工具先逐檔核對完整 App 備份與腳本簽章屬性，再產生 `.squirrel-proofreader/original/Squirrel-Liur-Underline.pkg`。備份位於 `~/Library/Rime/backups/squirrel-app-時間戳/`，其中 `manifest.json` 記錄原始與修改後的執行檔雜湊；`files.json` 記錄全部檔案與簽章屬性。安裝套件只更新 `/Library/Input Methods/Squirrel.app`，不包含 Rime 個人設定或使用者字庫；系統管理員認證必須在 macOS 視窗完成。原廠自動更新會覆蓋此本機修改，更新後需要重新評估相容版本。
+工具先逐檔核對完整 App 備份與腳本簽章屬性，再產生 `.squirrel-proofreader/original/Squirrel-Liur-Builtin.pkg`。備份位於 `~/Library/Rime/backups/squirrel-app-時間戳/`，其中 `manifest.json` 記錄原始與修改後的執行檔雜湊；`files.json` 記錄全部檔案與簽章屬性。安裝套件只更新 `/Library/Input Methods/Squirrel.app`，不包含 Rime 個人設定或使用者字庫；系統管理員認證必須在 macOS 視窗完成。原廠自動更新會覆蓋此本機修改，更新後需要重新評估相容版本。
+
+從舊的獨立背景服務升級時，完成安裝後執行一次：
+
+```sh
+bash develop/activate-builtin-proofreader.sh
+```
+
+遷移工具先驗證已安裝 App 的簽章與實際模型推論，再備份 Lua、連線程式和 LaunchAgent、停止舊服務，然後重啟鼠鬚管並確認內建 socket 能回覆。失敗會還原設定。內建版本使用 `builtin.sock`；舊版服務的 `checker.sock` 不會被測試程序佔用。舊模型檔暫留作還原備份。
+
+可用 `python3 develop/test-builtin-proofreader.py` 驗證封裝推論、socket 權限、崩潰重啟及父程序退出。`LIUR_BUNDLED_CHECKER` 可指定封裝後執行檔，讓 `develop/test-proofreader.py` 對它跑既有整合測試。
 
 安裝後須用真正按鍵驗證 `備pak` 時選取列變紅、換候選後恢復與 Tab 採用；原生 helper 測試和簽章驗證不能代替實機結果。
 

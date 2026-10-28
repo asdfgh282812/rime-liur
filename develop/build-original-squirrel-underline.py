@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import plistlib
+import runpy
 import shlex
 import shutil
 import subprocess
@@ -46,8 +47,17 @@ def prepare_source(work, source):
         if path.suffix in (".m", ".h", ".pch"):
             content = subprocess.check_output(["git", "-C", str(source), "show", f"HEAD:{path.name}"])
             (staged / path.name).write_bytes(content)
-    shutil.copy2(EXTENSION / "LiurProofreadHint.h", staged)
+    for name in ("LiurProofreadHint.h", "LiurProofreadService.h", "LiurProofreadService.m"):
+        shutil.copy2(EXTENSION / name, staged)
     run(["patch", "-p1", "-i", EXTENSION / "squirrel-0.18.patch"], cwd=staged)
+    main = staged / "main.m"
+    text = main.read_text().replace('#import "SquirrelApplicationDelegate.h"',
+        '#import "SquirrelApplicationDelegate.h"\n#import "LiurProofreadService.h"')
+    text = text.replace('      [NSApp.squirrelAppDelegate setupRime];',
+        '      [[LiurProofreadService shared] start];\n      [NSApp.squirrelAppDelegate setupRime];')
+    text = text.replace('    rime_get_api()->finalize();',
+        '    [[LiurProofreadService shared] stop];\n    rime_get_api()->finalize();')
+    main.write_text(text)
     return staged
 
 
@@ -70,6 +80,17 @@ def fingerprint(app):
 
 
 def sign(app, identity):
+    # Frozen Python extensions and interpreter must share the app's signing team.
+    helpers = app / "Contents/Helpers"
+    magic = {b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca"}
+    for path in sorted([*helpers.rglob("*"), *(app / "Contents/Resources/LiurChecker").rglob("*")], key=lambda p: len(p.parts), reverse=True):
+        if path.is_file() and not path.is_symlink():
+            with path.open("rb") as stream:
+                macho = stream.read(4) in magic
+            if macho:
+                run(["codesign", "--force", "--options", "runtime", "--sign", identity, path])
+    for path in sorted((app / "Contents/Resources/LiurChecker").rglob("*.framework"), key=lambda p: len(p.parts), reverse=True):
+        run(["codesign", "--force", "--options", "runtime", "--sign", identity, path])
     frameworks = app / "Contents/Frameworks"
     # Sign nested executables before their enclosing bundles, then the app.
     for path in sorted(frameworks.rglob("*"), key=lambda p: len(p.parts), reverse=True):
@@ -92,6 +113,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--identity", required=True, help="Existing development signing identity SHA-1")
     parser.add_argument("--source", type=Path)
+    parser.add_argument("--bundle-python", type=Path, default=ROOT / ".squirrel-proofreader/bundle-tools/venv/bin/python")
+    parser.add_argument("--model-dir", type=Path, default=ROOT / ".proofreader-model")
     args = parser.parse_args()
     info = plistlib.loads((OFFICIAL / "Contents/Info.plist").read_bytes())
     if info["CFBundleVersion"] != "0.18" or info["CFBundleIdentifier"] != "im.rime.inputmethod.Squirrel":
@@ -123,7 +146,11 @@ def main():
          "-Wl,-rpath,@loader_path/../Frameworks",
          "-Wl,-rpath,@loader_path/../Frameworks/rime-plugins",
          "-o", app / "Contents/MacOS/Squirrel"])
+    data = runpy.run_path(str(ROOT / "develop/bundle-proofreader.py"))["bundle"](
+        app, work, args.bundle_python, args.model_dir, Path.home() / "Library/Rime")
     sign(app, args.identity)
+    run([app / "Contents/Resources/LiurChecker/LiurChecker", "--model-dir", data / "model",
+         "--rime-dir", data, "--self-test"], env={"PATH": "/usr/bin:/bin", "HOME": str(Path.home())})
     # This is a maintenance CLI, so it loads all libraries without starting a
     # second IMK server or opening the live user dictionary.
     run([app / "Contents/MacOS/Squirrel", "--register-input-source"])
@@ -156,10 +183,13 @@ def main():
     component = work / "component.plist"
     run(["pkgbuild", "--analyze", "--root", payload, component])
     components = plistlib.loads(component.read_bytes())
-    for entry in components:
-        entry["BundleIsRelocatable"] = False
-        entry["BundleIsVersionChecked"] = False
-        entry["BundleOverwriteAction"] = "upgrade"
+    def configure_components(entries):
+        for entry in entries:
+            entry["BundleIsRelocatable"] = False
+            entry["BundleIsVersionChecked"] = False
+            entry["BundleOverwriteAction"] = "upgrade"
+            configure_components(entry.get("ChildBundles", []))
+    configure_components(components)
     component.write_bytes(plistlib.dumps(components))
     scripts = work / "scripts"
     scripts.mkdir(exist_ok=True)
@@ -170,10 +200,10 @@ def main():
         f'actual=$(/usr/bin/shasum -a 256 {executable} | /usr/bin/awk \'{{print $1}}\')\n'
         f'[ "$actual" = "{expected}" ] || {{ echo "Squirrel changed after backup; rebuild the package." >&2; exit 1; }}\n')
     preinstall.chmod(0o755)
-    package = work / "Squirrel-Liur-Underline.pkg"
+    package = work / "Squirrel-Liur-Builtin.pkg"
     run(["pkgbuild", "--root", payload, "--component-plist", component,
          "--scripts", scripts, "--install-location", "/Library/Input Methods",
-         "--identifier", "org.rime-liur.squirrel-underline", "--version", "0.18.1", package])
+         "--identifier", "org.rime-liur.squirrel-underline", "--version", "0.18.2", package])
     (work / "installation.json").write_text(json.dumps({"package": str(package), "backup": str(backup)}, indent=2) + "\n")
     print(f"Verified original backup: {backup}")
     print(f"Package ready for macOS Installer: {package}")

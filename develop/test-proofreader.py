@@ -107,7 +107,19 @@ class NativeProofreaderTests(rime_tests.RimeFeatures):
                         str(ROOT / "proofreader/client.c"), "-o", str(client)], check=True)
         super().setUpClass()
         cls.socket = cls.data / "proofreader/run/checker.sock"
-        cls.worker = subprocess.Popen([sys.executable, str(ROOT / "proofreader/service.py"),
+        if os.environ.get("LIUR_BUNDLED_CHECKER"):
+            client = Path(os.environ["LIUR_BUNDLED_CHECKER"]).parents[2] / "Helpers/liur_proofread_client"
+            previous = {key: os.environ.get(key) for key in ("LIUR_PROOFREADER_CLIENT", "LIUR_PROOFREADER_SOCKET")}
+            os.environ["LIUR_PROOFREADER_CLIENT"] = str(client)
+            os.environ["LIUR_PROOFREADER_SOCKET"] = str(cls.socket)
+            def restore_environment():
+                for key, value in previous.items():
+                    if value is None: os.environ.pop(key, None)
+                    else: os.environ[key] = value
+            cls.addClassCleanup(restore_environment)
+        worker_command = ([os.environ["LIUR_BUNDLED_CHECKER"]] if os.environ.get("LIUR_BUNDLED_CHECKER")
+                          else [sys.executable, str(ROOT / "proofreader/service.py")])
+        cls.worker = subprocess.Popen([*worker_command,
                                       "--model-dir", str(MODEL), "--rime-dir", str(cls.data),
                                       "--socket", str(cls.socket)], stdout=subprocess.DEVNULL,
                                      stderr=subprocess.PIPE)

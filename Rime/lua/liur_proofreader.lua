@@ -134,9 +134,9 @@ M.processor = {
 M.filter = {
   init = function(env)
     local directory = rime_api.get_user_data_dir()
-    env.socket = directory .. "/proofreader/run/checker.sock"
+    env.socket = os.getenv("LIUR_PROOFREADER_SOCKET") or directory .. "/proofreader/run/checker.sock"
     env.codes = ReverseLookup("liur.extended")
-    local client = directory .. "/proofreader/liur_proofread_client"
+    local client = os.getenv("LIUR_PROOFREADER_CLIENT") or directory .. "/proofreader/liur_proofread_client"
     local file = io.open(client, "rb")
     if file then file:close(); env.client = client end
   end,

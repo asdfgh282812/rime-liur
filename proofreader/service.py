@@ -3,6 +3,7 @@
 import argparse
 from functools import lru_cache
 import math
+import os
 from pathlib import Path
 import signal
 import socket
@@ -112,7 +113,7 @@ class Proofreader:
         return None
 
 
-def serve(checker, path):
+def serve(checker, path, parent_pid=None):
     path = Path(path)
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     path.parent.chmod(0o700)
@@ -129,9 +130,15 @@ def serve(checker, path):
         server.bind(str(path))
         path.chmod(0o600)
         server.listen(4)
+        server.settimeout(0.5)
         signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
         while True:
-            connection, _ = server.accept()
+            if parent_pid is not None and os.getppid() != parent_pid:
+                break
+            try:
+                connection, _ = server.accept()
+            except TimeoutError:
+                continue
             with connection:
                 connection.settimeout(0.05)
                 try:
@@ -157,10 +164,19 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-dir", type=Path, required=True)
     parser.add_argument("--rime-dir", type=Path, required=True)
-    parser.add_argument("--socket", type=Path, required=True)
+    parser.add_argument("--socket", type=Path)
+    parser.add_argument("--parent-pid", type=int)
+    parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
     checker = Proofreader(args.model_dir, args.rime_dir / "essay.txt", args.rime_dir / "terra_pinyin.dict.yaml")
-    serve(checker, args.socket)
+    if args.self_test:
+        if checker.suggest("備", "住") != ("註", "備註") or checker.suggest("意", "議") != ("義", "意義"):
+            raise RuntimeError("內建校錯自我檢查失敗")
+        print("OK: 備住→備註; 意議→意義")
+        return
+    if args.socket is None:
+        parser.error("需要 --socket 或 --self-test")
+    serve(checker, args.socket, args.parent_pid)
 
 
 if __name__ == "__main__":
